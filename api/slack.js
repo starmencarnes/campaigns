@@ -1,5 +1,5 @@
 import { WebClient } from '@slack/web-api';
-import { getAssistantResponse } from './assistant.js';
+import { getAssistantResponse } from '../lib/assistant.js';
 import { get, set } from '@vercel/edge-config';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
