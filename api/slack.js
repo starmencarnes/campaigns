@@ -15,12 +15,10 @@ export default async function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // ✅ Slack challenge check
   if (req.body?.type === 'url_verification') {
     return res.status(200).send(req.body.challenge);
   }
 
-  // ✅ Verify Slack request signature
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
   const body = JSON.stringify(req.body);
@@ -34,12 +32,12 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // ✅ Only process top-level event callbacks
-  if (req.body?.type !== 'event_callback') {
-    return res.status(200).send('Ignoring non-event_callback payload');
-  }
+  // ✅ Respond IMMEDIATELY to avoid Slack retrying
+  res.status(200).send('OK');
 
-  // ✅ Process valid app_mention events
+  // ✅ Process async after responding to Slack
+  if (req.body?.type !== 'event_callback') return;
+
   const event = req.body.event;
   if (
     event &&
@@ -47,7 +45,7 @@ export default async function handler(req, res) {
     event.user !== req.body.authorizations?.[0]?.user_id &&
     !event.bot_id
   ) {
-    const text = event.text.replace(/<@[^>]+>\s*/, ''); // Strip @mention
+    const text = event.text.replace(/<@[^>]+>\s*/, '');
     const reply = await getAssistantResponse(text);
 
     await fetch('https://slack.com/api/chat.postMessage', {
@@ -63,7 +61,4 @@ export default async function handler(req, res) {
       })
     });
   }
-
-  // ✅ Always return 200 to Slack
-  res.status(200).send('OK');
 }
