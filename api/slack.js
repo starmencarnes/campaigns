@@ -52,7 +52,8 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         channel: event.channel,
-        text: reply
+        text: reply,
+        thread_ts: event.thread_ts || event.ts
       })
     });
   }
