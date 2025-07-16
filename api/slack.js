@@ -1,0 +1,48 @@
+import crypto from 'crypto';
+import { config } from 'dotenv';
+import { NextResponse } from 'next/server.js';
+import { getAssistantResponse } from '../lib/assistant.js';
+
+config();
+
+export const configFile = {
+  runtime: 'nodejs18.x'
+};
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+
+  const signature = req.headers['x-slack-signature'];
+  const timestamp = req.headers['x-slack-request-timestamp'];
+  const body = req.rawBody || JSON.stringify(req.body);
+
+  const sigBase = `v0:${timestamp}:${body}`;
+  const mySig = 'v0=' + crypto
+    .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
+    .update(sigBase)
+    .digest('hex');
+
+  if (!crypto.timingSafeEqual(Buffer.from(mySig), Buffer.from(signature))) {
+    return res.status(403).send('Invalid signature');
+  }
+
+  const event = req.body.event;
+  if (event && event.type === 'app_mention') {
+    const text = event.text.replace(/<@[^>]+>\s*/, '');
+    const reply = await getAssistantResponse(text);
+
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        channel: event.channel,
+        text: reply
+      })
+    });
+  }
+
+  res.status(200).send('OK');
+}
