@@ -9,15 +9,15 @@ export const configFile = {
 };
 
 export default async function handler(req, res) {
+  console.log('🔍 Incoming request:', req.method, req.headers['content-type'], req.body);
+
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // ✅ Handle Slack URL verification (challenge request)
   if (req.body?.type === 'url_verification') {
     return res.status(200).send(req.body.challenge);
   }
-
   // ✅ Verify Slack request signature
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
