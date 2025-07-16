@@ -9,18 +9,20 @@ export const configFile = {
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method Not Allowed');
+  }
 
-  // ✅ Handle Slack URL verification
-  if (req.body.type === 'url_verification') {
+  // ✅ Handle Slack URL verification (challenge request)
+  if (req.body?.type === 'url_verification') {
     return res.status(200).send(req.body.challenge);
   }
 
+  // ✅ Verify Slack request signature
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
   const body = JSON.stringify(req.body);
 
-  // ✅ Verify Slack signature
   const sigBase = `v0:${timestamp}:${body}`;
   const mySig = 'v0=' + crypto
     .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
@@ -31,10 +33,10 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // ✅ Handle app mention event
+  // ✅ Handle app_mention events
   const event = req.body.event;
   if (event && event.type === 'app_mention') {
-    const text = event.text.replace(/<@[^>]+>\s*/, ''); // Remove bot mention
+    const text = event.text.replace(/<@[^>]+>\s*/, ''); // Remove @mention
     const reply = await getAssistantResponse(text);
 
     await fetch('https://slack.com/api/chat.postMessage', {
@@ -50,6 +52,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ Always respond to Slack
+  // ✅ Final response to Slack (must return 200)
   res.status(200).send('OK');
 }
