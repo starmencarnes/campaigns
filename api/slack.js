@@ -4,9 +4,6 @@ import { getAssistantResponse } from '../lib/assistant.js';
 
 config();
 
-// 🧠 In-memory store to deduplicate events (resets on cold start)
-const processedEvents = new Set();
-
 export const configFile = {
   runtime: 'nodejs18.x'
 };
@@ -18,12 +15,12 @@ export default async function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // ✅ Handle Slack URL verification
+  // Slack URL verification
   if (req.body?.type === 'url_verification') {
     return res.status(200).send(req.body.challenge);
   }
 
-  // ✅ Verify Slack signature
+  // Signature verification
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
   const body = JSON.stringify(req.body);
@@ -37,54 +34,37 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // ✅ Acknowledge the event immediately to prevent retries
-  res.status(200).send('OK');
-
-  if (req.body?.type !== 'event_callback') return;
-
   const event = req.body.event;
-  const eventId = req.body.event_id;
 
-  // ✅ Avoid duplicate processing
-  if (processedEvents.has(eventId)) {
-    console.log(`⚠️ Duplicate event ignored: ${eventId}`);
-    return;
-  }
-  processedEvents.add(eventId);
-
-  // ✅ Process app_mention
+  // Only handle app_mention
   if (
-    event &&
+    req.body.type === 'event_callback' &&
     event.type === 'app_mention' &&
     event.user !== req.body.authorizations?.[0]?.user_id &&
     !event.bot_id
   ) {
-    const text = event.text.replace(/<@[^>]+>\s*/, '');
+    const text = event.text.replace(/<@[^>]+>\s*/, '').trim(); // Strip @bot mention
     console.log('🤖 Received mention:', text);
 
-    try {
-      const reply = await getAssistantResponse(text);
-      console.log('✉️ Sending reply:', reply);
+    const reply = await getAssistantResponse(text);
 
-      const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          channel: event.channel,
-          text: reply,
-          thread_ts: event.thread_ts || event.ts
-        })
-      });
+    console.log('📨 Replying in Slack thread...');
+    const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        channel: event.channel,
+        thread_ts: event.thread_ts || event.ts,
+        text: reply
+      })
+    });
 
-      const slackData = await slackRes.json();
-      if (!slackData.ok) {
-        console.error('❌ Slack API error:', slackData);
-      }
-    } catch (err) {
-      console.error('❌ Error in OpenAI or Slack:', err);
-    }
+    const slackData = await slackRes.json();
+    console.log('✅ Slack response:', slackData);
   }
+
+  res.status(200).send('OK');
 }
