@@ -35,7 +35,12 @@ export default async function handler(req, res) {
 
   // ✅ Handle app_mention events
   const event = req.body.event;
-  if (event && event.type === 'app_mention') {
+  if (
+    event &&
+    event.type === 'app_mention' &&
+    event.user !== req.body.authorizations?.[0]?.user_id
+  ) {
+
     const text = event.text.replace(/<@[^>]+>\s*/, ''); // Remove @mention
     const reply = await getAssistantResponse(text);
 
