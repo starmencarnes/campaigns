@@ -1,5 +1,5 @@
 import { WebClient } from '@slack/web-api';
-import { getAssistantResponse } from './openai.js';
+import { getAssistantResponse } from './assistant.js';
 import { get, set } from '@vercel/edge-config';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
@@ -18,7 +18,7 @@ export async function handleSlackEvent(event) {
     return;
   }
 
-  // Mark as processed immediately to avoid race conditions
+  // Mark as processed before continuing to avoid race conditions
   await set(eventId, true);
   console.log('✅ Event marked as handled:', eventId);
 
@@ -33,7 +33,7 @@ export async function handleSlackEvent(event) {
   try {
     const result = await slack.chat.postMessage({
       channel: event.channel,
-      thread_ts: event.ts,
+      thread_ts: event.ts, // Reply in the thread
       text: reply,
     });
 
