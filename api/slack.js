@@ -4,13 +4,21 @@ import { hasEventBeenHandled, logHandledEvent } from '../lib/githubCsv.js';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
-export async function handleSlackEvent(event) {
-  const eventId = event.event_id || event.client_msg_id || event.event?.ts;
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const event = req.body.event;
+  const eventId = req.body.event_id || event?.client_msg_id || event?.ts;
 
   if (!eventId) {
     console.warn('⚠️ Missing deduplication key');
-    return;
+    return res.status(400).json({ error: 'Missing event ID' });
   }
+
+  // Respond early to avoid Slack timeouts
+  res.status(200).end();
 
   if (await hasEventBeenHandled(eventId)) {
     console.log('🛑 Duplicate event ignored:', eventId);
