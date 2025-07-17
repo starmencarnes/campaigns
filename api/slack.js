@@ -5,7 +5,7 @@ import { getAssistantResponse } from '../lib/assistant.js';
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
 export default async function handler(req, res) {
-  // 1) Skip Slack retry attempts
+  // 1) Skip any Slack retry attempts
   if (req.headers['x-slack-retry-num']) {
     console.log('🛑 Skipping Slack retry:', req.headers['x-slack-retry-num']);
     return res.status(200).end();
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     return res.status(200).send(req.body.challenge);
   }
 
-  // 4) Signature verification
+  // 4) Verify Slack request signature
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
   const bodyRaw = JSON.stringify(req.body);
@@ -36,21 +36,21 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 5) ACK immediately to prevent Slack retries
+  // 5) ACK immediately to stop Slack retries
   res.status(200).end();
 
-  // 6) Process only real app_mention events
+  // 6) Filter for only real app_mention events
   const event = req.body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
     console.log('🔄 Ignoring event:', event?.type, 'bot?', !!event?.bot_id);
     return;
   }
 
-  // 7) Extract the user’s text
+  // 7) Extract and log user text
   const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
   console.log('🤖 User said:', JSON.stringify(userText));
 
-  // 8) Call your deployed Assistant by ID
+  // 8) Ask your Assistant and log the reply
   let reply;
   try {
     console.log('⏳ Asking Assistant (ID)...');
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     reply = 'Sorry, something went wrong getting your idea.';
   }
 
-  // 9) Post the reply back into the thread
+  // 9) Post the reply back in the thread
   try {
     console.log('📨 Posting reply to Slack...');
     const slackRes = await slack.chat.postMessage({
