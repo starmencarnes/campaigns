@@ -1,99 +1,58 @@
 import crypto from 'crypto';
+import { config } from 'dotenv';
 import { getAssistantResponse } from '../lib/assistant.js';
+
+config();
 
 export const configFile = {
   runtime: 'nodejs18.x'
 };
 
-// In‑memory dedupe
-const seen = new Set();
+// ← Add an in‑memory Set at the top for dedupe
++ const processedEvents = new Set();
 
 export default async function handler(req, res) {
-  // 0) Only POST
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 1) Collect raw body
-  let raw = '';
-  await new Promise((resolve, reject) => {
-    req.on('data', chunk => raw += chunk.toString());
-    req.on('end', resolve);
-    req.on('error', reject);
-  });
-
-  // 2) Parse JSON
-  let body;
-  try {
-    body = JSON.parse(raw);
-  } catch (err) {
-    console.error('❌ Invalid JSON:', err);
-    return res.status(400).send('Invalid JSON');
+  // ✅ Handle Slack URL verification (challenge request)
+  if (req.body?.type === 'url_verification') {
+    return res.status(200).send(req.body.challenge);
   }
 
-  // 3) URL verification
-  if (body.type === 'url_verification') {
-    return res.status(200).send(body.challenge);
-  }
+  // ✅ Verify Slack request signature
+  const signature = req.headers['x-slack-signature'];
+  const timestamp = req.headers['x-slack-request-timestamp'];
+  const body = JSON.stringify(req.body);
 
-  // 4) Skip Slack retries
-  const retry = req.headers['x-slack-retry-num'];
-  if (retry) {
-    console.log('🛑 Skipping Slack retry:', retry);
-    return res.status(200).end();
-  }
-
-  // 5) Verify signature against the raw body
-  const sig = req.headers['x-slack-signature'];
-  const ts  = req.headers['x-slack-request-timestamp'];
-  const basestring = `v0:${ts}:${raw}`;
+  const sigBase = `v0:${timestamp}:${body}`;
   const mySig = 'v0=' + crypto
     .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
-    .update(basestring)
+    .update(sigBase)
     .digest('hex');
 
-  if (!crypto.timingSafeEqual(Buffer.from(mySig), Buffer.from(sig))) {
-    console.error('❌ Signature mismatch', { expected: mySig, got: sig });
+  if (!crypto.timingSafeEqual(Buffer.from(mySig), Buffer.from(signature))) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 6) Ack immediately
-  res.status(200).end();
+  // ✅ Handle app_mention events
+  const event = req.body.event;
+  if (event && event.type === 'app_mention') {
++   // ——— New De‑duplication Step ———
++   const eventId = req.body.event_id;
++   if (processedEvents.has(eventId)) {
++     console.log('⚠️ Duplicate event detected, skipping:', eventId);
++     return res.status(200).send('OK');    // ack & stop
++   }
++   console.log('✅ New event, processing:', eventId);
++   processedEvents.add(eventId);
++   // ——————————————————————————
 
-  // 7) Only handle app_mention
-  const event = body.event;
-  if (!event || event.type !== 'app_mention' || event.bot_id) {
-    console.log('🔄 Ignoring event:', event?.type, 'bot?', !!event?.bot_id);
-    return;
-  }
+    const text = event.text.replace(/<@[^>]+>\s*/, ''); // Remove @mention
+    const reply = await getAssistantResponse(text);
 
-  // 8) De‑duplicate by event_id
-  const id = body.event_id;
-  if (seen.has(id)) {
-    console.log('⚠️ Duplicate event detected, skipping:', id);
-    return;
-  }
-  console.log('✅ New event, processing:', id);
-  seen.add(id);
-
-  // 9) Extract text, call assistant
-  const text = event.text.replace(/<@[^>]+>\s*/, '').trim();
-  console.log('🤖 User said:', text);
-
-  let reply;
-  try {
-    console.log('⏳ Calling assistant…');
-    reply = await getAssistantResponse(text);
-    console.log('✅ Assistant replied:', reply);
-  } catch (err) {
-    console.error('❌ Assistant error:', err);
-    reply = "Sorry, something went wrong getting your idea.";
-  }
-
-  // 10) Threaded reply
-  try {
-    console.log('📨 Posting reply…');
-    const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
+    await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
@@ -101,13 +60,11 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         channel: event.channel,
-        thread_ts: event.thread_ts || event.ts,
         text: reply
       })
     });
-    const data = await slackRes.json();
-    console.log('✅ Slack response:', data);
-  } catch (err) {
-    console.error('❌ Error posting to Slack:', err);
   }
+
+  // ✅ Final response to Slack (must return 200)
+  res.status(200).send('OK');
 }
