@@ -1,6 +1,6 @@
 import { WebClient } from '@slack/web-api';
 import { getAssistantResponse } from '../lib/assistant.js';
-import { hasSeenEvent, storeEvent } from '../lib/eventStore.js';
+import { hasEventBeenHandled, logHandledEvent } from '../lib/githubCsv.js';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
@@ -12,22 +12,16 @@ export async function handleSlackEvent(event) {
     return;
   }
 
-  const seen = await hasSeenEvent(eventId);
-  if (seen) {
+  if (await hasEventBeenHandled(eventId)) {
     console.log('🛑 Duplicate event ignored:', eventId);
     return;
   }
 
-  // Store immediately to avoid race conditions
-  await storeEvent(eventId);
-
-  console.log('🤖 Received mention:', event.text);
-  console.log('💬 Asking OpenAI Assistant:', event.text);
+  await logHandledEvent(eventId);
+  console.log('✅ Event marked as handled:', eventId);
 
   const reply = await getAssistantResponse(event.text);
-
   console.log('✅ OpenAI reply:', reply);
-  console.log('📨 Replying in Slack thread...');
 
   try {
     const result = await slack.chat.postMessage({
@@ -35,7 +29,6 @@ export async function handleSlackEvent(event) {
       thread_ts: event.ts,
       text: reply,
     });
-
     console.log('✅ Slack response:', result);
   } catch (err) {
     console.error('❌ Error sending message to Slack:', err);
