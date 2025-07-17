@@ -61,9 +61,11 @@ export default async function handler(req, res) {
     reply = 'Sorry, something went wrong getting your idea.';
   }
 
-  // 9) Post the reply back in the thread
+  // 9) **Confirm token** then post the reply back in the thread
+  console.log('🔑 SLACK_BOT_TOKEN loaded:', !!process.env.SLACK_BOT_TOKEN);
+
   try {
-    console.log('📨 Posting reply to Slack...');
+    console.log('📨 Posting reply to Slack…');
     const slackRes = await slack.chat.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts || event.ts,
