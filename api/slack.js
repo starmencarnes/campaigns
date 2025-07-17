@@ -1,7 +1,4 @@
 import crypto from 'crypto';
-import { WebClient } from '@slack/web-api';
-
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
 export default async function handler(req, res) {
   // 1) Skip Slack retries
@@ -35,7 +32,7 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 5) Ack Slack immediately
+  // 5) Acknowledge immediately
   res.status(200).end();
 
   // 6) Pull out the event and ignore non‑app_mention or bot messages
@@ -53,16 +50,26 @@ export default async function handler(req, res) {
   const reply = `✅ (stub) Received: ${userText}`;
   console.log('✏️ Using stub reply:', reply);
 
-  // 9) Post back to Slack in thread
+  // 9) Confirm token and POST via fetch
+  console.log('🔑 SLACK_BOT_TOKEN loaded:', !!process.env.SLACK_BOT_TOKEN);
+  console.log('📨 Posting stub via fetch to Slack...');
   try {
-    console.log('📨 Posting stub to Slack...');
-    const slackRes = await slack.chat.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts || event.ts,
-      text: reply
+    const slackResponse = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        channel: event.channel,
+        thread_ts: event.thread_ts || event.ts,
+        text: reply
+      })
     });
-    console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
+    const slackData = await slackResponse.json();
+    console.log('✅ Slack HTTP status:', slackResponse.status);
+    console.log('✅ Slack response body:', slackData);
   } catch (err) {
-    console.error('❌ Error posting to Slack:', err);
+    console.error('❌ fetch to Slack failed:', err);
   }
 }
