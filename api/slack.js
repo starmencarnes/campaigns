@@ -1,6 +1,6 @@
 import { WebClient } from '@slack/web-api';
 import { getAssistantResponse } from '../lib/assistant.js';
-import { get, set } from '@vercel/edge-config';
+import { hasSeenEvent, storeEvent } from '../lib/eventStore.js';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
@@ -12,15 +12,14 @@ export async function handleSlackEvent(event) {
     return;
   }
 
-  const alreadyHandled = await get(eventId);
-  if (alreadyHandled) {
+  const seen = await hasSeenEvent(eventId);
+  if (seen) {
     console.log('🛑 Duplicate event ignored:', eventId);
     return;
   }
 
-  // Mark as processed before continuing to avoid race conditions
-  await set(eventId, true);
-  console.log('✅ Event marked as handled:', eventId);
+  // Store immediately to avoid race conditions
+  await storeEvent(eventId);
 
   console.log('🤖 Received mention:', event.text);
   console.log('💬 Asking OpenAI Assistant:', event.text);
@@ -33,7 +32,7 @@ export async function handleSlackEvent(event) {
   try {
     const result = await slack.chat.postMessage({
       channel: event.channel,
-      thread_ts: event.ts, // Reply in the thread
+      thread_ts: event.ts,
       text: reply,
     });
 
