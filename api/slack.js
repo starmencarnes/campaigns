@@ -1,78 +1,69 @@
 import crypto from 'crypto';
-import { WebClient } from '@slack/web-api';
+import { config } from 'dotenv';
 import { getAssistantResponse } from '../lib/assistant.js';
 
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+config();
+
+export const configFile = {
+  runtime: 'nodejs18.x'
+};
 
 export default async function handler(req, res) {
-  // 1) Skip any Slack retry attempts
-  if (req.headers['x-slack-retry-num']) {
-    console.log('🛑 Skipping Slack retry:', req.headers['x-slack-retry-num']);
-    return res.status(200).end();
-  }
+  console.log('🔍 Incoming request:', req.method, req.headers['content-type'], req.body);
 
-  // 2) Only accept POST
   if (req.method !== 'POST') {
-    console.log('⚠️ Non‑POST received:', req.method);
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 3) URL verification handshake
+  // ✅ Slack challenge check
   if (req.body?.type === 'url_verification') {
-    console.log('🔑 URL verification challenge');
     return res.status(200).send(req.body.challenge);
   }
 
-  // 4) Verify Slack request signature
+  // ✅ Verify Slack request signature
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
-  const bodyRaw = JSON.stringify(req.body);
-  const expectedSig = 'v0=' + crypto
+  const body = JSON.stringify(req.body);
+  const sigBase = v0:${timestamp}:${body};
+  const mySig = 'v0=' + crypto
     .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
-    .update(`v0:${timestamp}:${bodyRaw}`)
+    .update(sigBase)
     .digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(signature))) {
-    console.error('❌ Signature mismatch');
+
+  if (!crypto.timingSafeEqual(Buffer.from(mySig), Buffer.from(signature))) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 5) ACK immediately to stop Slack retries
-  res.status(200).end();
+  // ✅ Only process top-level event callbacks
+  if (req.body?.type !== 'event_callback') {
+    return res.status(200).send('Ignoring non-event_callback payload');
+  }
 
-  // 6) Filter for only real app_mention events
+  // ✅ Process valid app_mention events
   const event = req.body.event;
-  if (!event || event.type !== 'app_mention' || event.bot_id) {
-    console.log('🔄 Ignoring event:', event?.type, 'bot?', !!event?.bot_id);
-    return;
-  }
+  if (
+    event &&
+    event.type === 'app_mention' &&
+    event.user !== req.body.authorizations?.[0]?.user_id &&
+    !event.bot_id
+  ) {
+    const text = event.text.replace(/<@[^>]+>\s*/, ''); // Strip @mention
+    const reply = await getAssistantResponse(text);
 
-  // 7) Extract and log user text
-  const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
-  console.log('🤖 User said:', JSON.stringify(userText));
-
-  // 8) Ask your Assistant and log the reply
-  let reply;
-  try {
-    console.log('⏳ Asking Assistant (ID)...');
-    reply = await getAssistantResponse(userText);
-    console.log('✅ Assistant replied:', JSON.stringify(reply));
-  } catch (err) {
-    console.error('❌ Error in getAssistantResponse:', err);
-    reply = 'Sorry, something went wrong getting your idea.';
-  }
-
-  // 9) **Confirm token** then post the reply back in the thread
-  console.log('🔑 SLACK_BOT_TOKEN loaded:', !!process.env.SLACK_BOT_TOKEN);
-
-  try {
-    console.log('📨 Posting reply to Slack…');
-    const slackRes = await slack.chat.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts || event.ts,
-      text: reply
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        Authorization: Bearer ${process.env.SLACK_BOT_TOKEN},
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        channel: event.channel,
+        text: reply,
+        thread_ts: event.thread_ts || event.ts
+      })
     });
-    console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
-  } catch (err) {
-    console.error('❌ Error posting to Slack:', err);
   }
+
+  // ✅ Always return 200 to Slack
+  res.status(200).send('OK');
 }
