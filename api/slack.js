@@ -36,47 +36,27 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 5) Ack immediately
-  res.status(200).end();
+  // 5) Acknowledge immediately
+res.status(200).end();
 
-  // 6) Only process actual “app_mention” callbacks
-  if (req.body.type !== 'event_callback') {
-    console.log('🔄 Ignoring non‐event_callback:', req.body.type);
-    return;
-  }
-  const event = req.body.event;
-  if (!event || event.type !== 'app_mention' || event.bot_id) {
-    console.log('🔄 Ignoring non‐app_mention or bot event:', event?.type);
-    return;
-  }
+// 6) Filter to app_mention...
+// 7) Grab userText
+const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
+console.log('🤖 User said:', JSON.stringify(userText));
 
-  // 7) Strip mention and log the incoming text
-  const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
-  console.log('🤖 User said:', JSON.stringify(userText));
+// 8) **STUB** bypass OpenAI
+const reply = `✅ (stub) Received: ${userText}`;
+console.log('✏️ Using stub reply:', reply);
 
-  // 8) Call the Assistant (with try/catch and logs)
-  let reply;
-  try {
-    console.log('⏳ Calling OpenAI Assistant...');
-    reply = await getAssistantResponse(userText);
-    console.log('✅ Assistant replied:', JSON.stringify(reply));
-  } catch (err) {
-    console.error('❌ Error in getAssistantResponse:', err);
-    // (Optional) send an error message back to Slack
-    return;
-  }
-
-  // 9) Post back to Slack (with logs)
-  try {
-    console.log('📨 Posting message to Slack thread...');
-    const slackRes = await slack.chat.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts || event.ts,
-      text: reply,
-    });
-    console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
-  } catch (err) {
-    console.error('❌ Error posting to Slack:', err);
-  }
+// 9) Post back to Slack
+try {
+  console.log('📨 Posting stub to Slack...');
+  const slackRes = await slack.chat.postMessage({
+    channel: event.channel,
+    thread_ts: event.thread_ts || event.ts,
+    text: reply,
+  });
+  console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
+} catch (err) {
+  console.error('❌ Error posting to Slack:', err);
 }
-
