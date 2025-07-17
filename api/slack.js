@@ -1,5 +1,7 @@
 import crypto from 'crypto';
-import axios from 'axios';
+import { WebClient } from '@slack/web-api';
+
+const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
 export default async function handler(req, res) {
   // 1) Skip Slack retries
@@ -14,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 3) URL verification
+  // 3) URL verification handshake
   if (req.body?.type === 'url_verification') {
     console.log('🔑 URL verification challenge');
     return res.status(200).send(req.body.challenge);
@@ -36,41 +38,32 @@ export default async function handler(req, res) {
   // 5) Ack Slack immediately
   res.status(200).end();
 
-  // 6) Extract the event and filter
+  // 6) Pull out the event and ignore non‑app_mention or bot messages
   const event = req.body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
     console.log('🔄 Ignoring event:', event?.type, 'bot?', !!event?.bot_id);
     return;
   }
 
-  // 7) Parse user text
+  // 7) Get the user’s text
   const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
   console.log('🤖 User said:', JSON.stringify(userText));
 
-  // 8) STUB reply
+  // 8) STUB: Bypass OpenAI
   const reply = `✅ (stub) Received: ${userText}`;
   console.log('✏️ Using stub reply:', reply);
 
-  // 9) Post via Axios to Slack API
-  console.log('📨 Posting stub via axios to Slack...');
+  // 9) Post back to Slack via WebClient
   try {
-    const slackRes = await axios.post(
-      'https://slack.com/api/chat.postMessage',
-      {
-        channel: event.channel,
-        thread_ts: event.thread_ts || event.ts,
-        text: reply
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    console.log('✅ Slack HTTP status:', slackRes.status);
-    console.log('✅ Slack response body:', slackRes.data);
+    console.log('📨 Posting stub via WebClient...');
+    const slackRes = await slack.chat.postMessage({
+      channel: event.channel,
+      thread_ts: event.thread_ts || event.ts,
+      text: reply
+    });
+    console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
   } catch (err) {
-    console.error('❌ Axios to Slack failed:', err);
+    console.error('❌ WebClient postMessage error:', err);
   }
 }
+
