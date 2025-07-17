@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { WebClient } from '@slack/web-api';
-import { getAssistantResponse } from '../lib/assistant.js';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
@@ -11,13 +10,13 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 2) Only POST
+  // 2) Only accept POST
   if (req.method !== 'POST') {
-    console.log('⚠️ Non‐POST received:', req.method);
+    console.log('⚠️ Non‑POST received:', req.method);
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 3) URL verification
+  // 3) URL verification handshake
   if (req.body?.type === 'url_verification') {
     console.log('🔑 URL verification challenge');
     return res.status(200).send(req.body.challenge);
@@ -36,27 +35,34 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 5) Acknowledge immediately
-res.status(200).end();
+  // 5) Ack Slack immediately
+  res.status(200).end();
 
-// 6) Filter to app_mention...
-// 7) Grab userText
-const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
-console.log('🤖 User said:', JSON.stringify(userText));
+  // 6) Pull out the event and ignore non‑app_mention or bot messages
+  const event = req.body.event;
+  if (!event || event.type !== 'app_mention' || event.bot_id) {
+    console.log('🔄 Ignoring event:', event?.type, 'bot?', !!event?.bot_id);
+    return;
+  }
 
-// 8) **STUB** bypass OpenAI
-const reply = `✅ (stub) Received: ${userText}`;
-console.log('✏️ Using stub reply:', reply);
+  // 7) Get the user’s text
+  const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
+  console.log('🤖 User said:', JSON.stringify(userText));
 
-// 9) Post back to Slack
-try {
-  console.log('📨 Posting stub to Slack...');
-  const slackRes = await slack.chat.postMessage({
-    channel: event.channel,
-    thread_ts: event.thread_ts || event.ts,
-    text: reply,
-  });
-  console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
-} catch (err) {
-  console.error('❌ Error posting to Slack:', err);
+  // 8) STUB: Bypass OpenAI
+  const reply = `✅ (stub) Received: ${userText}`;
+  console.log('✏️ Using stub reply:', reply);
+
+  // 9) Post back to Slack in thread
+  try {
+    console.log('📨 Posting stub to Slack...');
+    const slackRes = await slack.chat.postMessage({
+      channel: event.channel,
+      thread_ts: event.thread_ts || event.ts,
+      text: reply
+    });
+    console.log('✅ Slack API ok:', slackRes.ok, 'ts:', slackRes.ts);
+  } catch (err) {
+    console.error('❌ Error posting to Slack:', err);
+  }
 }
