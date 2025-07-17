@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import axios from 'axios';
 
 export default async function handler(req, res) {
   // 1) Skip Slack retries
@@ -13,7 +14,7 @@ export default async function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 3) URL verification handshake
+  // 3) URL verification
   if (req.body?.type === 'url_verification') {
     console.log('🔑 URL verification challenge');
     return res.status(200).send(req.body.challenge);
@@ -32,44 +33,44 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 5) Acknowledge immediately
+  // 5) Ack Slack immediately
   res.status(200).end();
 
-  // 6) Pull out the event and ignore non‑app_mention or bot messages
+  // 6) Extract the event and filter
   const event = req.body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
     console.log('🔄 Ignoring event:', event?.type, 'bot?', !!event?.bot_id);
     return;
   }
 
-  // 7) Get the user’s text
+  // 7) Parse user text
   const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
   console.log('🤖 User said:', JSON.stringify(userText));
 
-  // 8) STUB: Bypass OpenAI
+  // 8) STUB reply
   const reply = `✅ (stub) Received: ${userText}`;
   console.log('✏️ Using stub reply:', reply);
 
-  // 9) Confirm token and POST via fetch
-  console.log('🔑 SLACK_BOT_TOKEN loaded:', !!process.env.SLACK_BOT_TOKEN);
-  console.log('📨 Posting stub via fetch to Slack...');
+  // 9) Post via Axios to Slack API
+  console.log('📨 Posting stub via axios to Slack...');
   try {
-    const slackResponse = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    const slackRes = await axios.post(
+      'https://slack.com/api/chat.postMessage',
+      {
         channel: event.channel,
         thread_ts: event.thread_ts || event.ts,
         text: reply
-      })
-    });
-    const slackData = await slackResponse.json();
-    console.log('✅ Slack HTTP status:', slackResponse.status);
-    console.log('✅ Slack response body:', slackData);
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    console.log('✅ Slack HTTP status:', slackRes.status);
+    console.log('✅ Slack response body:', slackRes.data);
   } catch (err) {
-    console.error('❌ fetch to Slack failed:', err);
+    console.error('❌ Axios to Slack failed:', err);
   }
 }
