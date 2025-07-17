@@ -33,10 +33,10 @@ export default async function handler(req, res) {
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
   const bodyRaw = JSON.stringify(req.body);
-  const expectedSig = 'v0=' + crypto
-    .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
-    .update(`v0:${timestamp}:${bodyRaw}`)
-    .digest('hex');
+  const expectedSig = 'v0=' +
+    crypto.createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
+          .update(`v0:${timestamp}:${bodyRaw}`)
+          .digest('hex');
   if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(signature))) {
     console.error('❌ Signature mismatch');
     return res.status(403).send('Invalid signature');
@@ -54,9 +54,10 @@ export default async function handler(req, res) {
   // 6) De‑duplicate by event_id
   const eventId = req.body.event_id;
   if (processedEvents.has(eventId)) {
-    console.log('🛑 Duplicate event ignored:', eventId);
+    console.log('⚠️ Duplicate event detected, skipping:', eventId);
     return;
   }
+  console.log('✅ New event, processing:', eventId);
   processedEvents.add(eventId);
 
   // 7) Extract user text
