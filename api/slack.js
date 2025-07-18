@@ -63,7 +63,7 @@ export default async function handler(req, res) {
   const channel = event.channel;
   const slackTs = event.thread_ts || event.ts;
   const safeTs = slackTs.replace(/\./g, '_');
-  const mapKey  = `openAIThread:${safeTs}`;
+  const mapKey  = `openAIThread_${safeTs}`;
 
   // 7) read any existing OpenAI thread ID from Edge Config
   const existingThread = await get(mapKey);
