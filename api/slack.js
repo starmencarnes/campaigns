@@ -6,21 +6,23 @@ config();
 export const configFile = { runtime: 'nodejs18.x' };
 
 export default async function handler(req, res) {
+  // 0) Only POST
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
+
+  // 1) URL verification
   if (req.body?.type === 'url_verification') {
     return res.status(200).send(req.body.challenge);
   }
 
-  // 1) Skip Slack retry attempts
-  const retryNum = req.headers['x-slack-retry-num'];
-  if (retryNum) {
-    console.log('🛑 Skipping Slack retry:', retryNum);
+  // 2) Skip Slack retry attempts
+  if (req.headers['x-slack-retry-num']) {
+    console.log('🛑 Skipping Slack retry:', req.headers['x-slack-retry-num']);
     return res.status(200).end();
   }
 
-  // 2) Signature check
+  // 3) Verify Slack signature
   const sig  = req.headers['x-slack-signature'];
   const ts   = req.headers['x-slack-request-timestamp'];
   const body = JSON.stringify(req.body);
@@ -33,35 +35,31 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 3) Ack immediately
-  res.status(200).end();
-
-  // 4) Only handle app_mention from humans
+  // 4) Extract event and ignore non‑mentions
   const event = req.body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
-    return;
+    return res.status(200).end();
   }
 
-  // 5) Extract and log
-  const text = event.text.replace(/<@[^>]+>\s*/, '').trim();
-  console.log('🤖 User said:', text);
+  // 5) Process the mention
+  const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
+  console.log('🤖 User said:', userText);
 
-  // 6) Get reply
+  // 6) Get the AI (stub or real)
   let reply;
   try {
-    reply = await getAssistantResponse(text);
+    reply = await getAssistantResponse(userText);
+    console.log('✅ Assistant replied:', reply);
   } catch (err) {
     console.error('❌ Assistant error:', err);
     reply = 'Sorry, something went wrong getting your idea.';
   }
-  console.log('✅ Assistant replied:', reply);
 
-  // 7) Prepare payload (no thread for now)
-  console.log('🔑 SLACK_BOT_TOKEN loaded:', !!process.env.SLACK_BOT_TOKEN);
+  // 7) Post back to Slack
   const payload = { channel: event.channel, text: reply };
-  console.log('📨 Posting to Slack with payload:', JSON.stringify(payload));
+  console.log('📨 Posting to Slack with payload:', payload);
 
-  // 8) Send and log response
+  let slackData;
   try {
     const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
@@ -72,9 +70,12 @@ export default async function handler(req, res) {
       body: JSON.stringify(payload)
     });
     console.log('ℹ️ HTTP status:', slackRes.status);
-    const data = await slackRes.json();
-    console.log('ℹ️ Slack response body:', data);
+    slackData = await slackRes.json();
+    console.log('ℹ️ Slack response body:', slackData);
   } catch (err) {
     console.error('❌ Network error posting to Slack:', err);
   }
+
+  // 8) Finally ACK Slack once we’ve done the work
+  return res.status(200).send('OK');
 }
