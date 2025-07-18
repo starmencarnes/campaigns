@@ -56,7 +56,7 @@ export default async function handler(req, res) {
   }
 
   // 7) Post back to Slack
-  const payload = { channel: event.channel, text: reply };
+  const payload = { channel: event.channel, thread_ts: event.thread_ts || event.ts, text: reply };
   console.log('📨 Posting to Slack with payload:', payload);
 
   let slackData;
