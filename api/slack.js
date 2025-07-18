@@ -107,15 +107,18 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify([
-            { key: mapKey, value: threadId }
-          ])
+          body: JSON.stringify({
+            items: [
+              { key: mapKey, value: threadId }
+            ]
+          })
         }
       );
       console.log(
         '🗄️ Persist mapping:', await patchRes.json()
       );
     }
+
   } catch (err) {
     console.error('❌ Assistant error:', err);
     aiReply = 'Sorry, something went wrong getting your idea.';
