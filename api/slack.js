@@ -1,70 +1,58 @@
-// /api/slack.js
 import crypto from 'crypto';
 import { config } from 'dotenv';
-import fetch from 'node-fetch'; // or omit on Node18+
+import fetch from 'node-fetch';    // or remove if using native fetch
 import { getAssistantResponse } from '../lib/assistant.js';
 import { get, set } from '@vercel/edge-config';
 
 config();
 export const configFile = { runtime: 'nodejs18.x' };
 
-// No in-memory map any more
-
 export default async function handler(req, res) {
-  // 0) Only POST
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
-  }
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+  if (req.body?.type === 'url_verification') return res.status(200).send(req.body.challenge);
 
-  // 1) Slack URL verification
-  if (req.body?.type === 'url_verification') {
-    return res.status(200).send(req.body.challenge);
-  }
-
-  // 2) Skip Slack retry attempts
-  const retryNum = req.headers['x-slack-retry-num'];
-  if (retryNum) {
-    console.log('🛑 Skipping Slack retry:', retryNum);
+  // 1) Skip Slack retries
+  if (req.headers['x-slack-retry-num']) {
+    console.log('🛑 Skipping Slack retry:', req.headers['x-slack-retry-num']);
     return res.status(200).end();
   }
 
-  // 3) Verify Slack signature
-  const signature = req.headers['x-slack-signature'];
-  const timestamp = req.headers['x-slack-request-timestamp'];
-  const bodyRaw   = JSON.stringify(req.body);
-  const expected  = 'v0=' +
-    crypto
-      .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
-      .update(`v0:${timestamp}:${bodyRaw}`)
-      .digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
-    console.error('❌ Signature mismatch', { expected, signature });
+  // 2) Verify signature
+  const sig      = req.headers['x-slack-signature'];
+  const ts       = req.headers['x-slack-request-timestamp'];
+  const bodyRaw  = JSON.stringify(req.body);
+  const expected = 'v0=' +
+    crypto.createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
+          .update(`v0:${ts}:${bodyRaw}`)
+          .digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
+    console.error('❌ Signature mismatch', { expected, sig });
     return res.status(403).send('Invalid signature');
   }
 
-  // 4) Pull out the event & ignore non-mentions/bots
+  // 3) Pull out event & filter
   const event = req.body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
     return res.status(200).end();
   }
 
-  // 5) Deduplicate by event_id
+  // 4) De-dup by event_id
   const eventId = req.body.event_id;
   const dedupeKey = `slackEvent:${eventId}`;
-  const seen = await get(dedupeKey);
-  if (seen) {
+  if (await get(dedupeKey)) {
     console.log('⚠️ Duplicate event, skipping:', eventId);
     return res.status(200).end();
   }
   await set(dedupeKey, true);
-  console.log('✅ New event, processing:', eventId);
+  console.log('✅ New event:', eventId);
 
-  // 6) Compute Slack thread key & user text
-  const channel   = event.channel;
-  const slackTs   = event.thread_ts || event.ts;
-  const mapKey    = `openAIThread:${slackTs}`;
+  // 5) Prepare thread mapping
+  const channel = event.channel;
+  const slackTs = event.thread_ts || event.ts;
+  const mapKey  = `openAIThread:${slackTs}`;
   const existingThread = await get(mapKey);
 
+  // 6) Extract user text
   const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
   console.log('🤖 User said:', userText);
 
@@ -80,7 +68,7 @@ export default async function handler(req, res) {
     });
     console.log('ℹ️ Ping response:', await pingRes.json());
   } catch (err) {
-    console.error('❌ Error sending ping:', err);
+    console.error('❌ Ping error:', err);
   }
 
   // 8) Call your thread-aware assistant
@@ -90,17 +78,17 @@ export default async function handler(req, res) {
       await getAssistantResponse(userText, existingThread));
     console.log('✅ Assistant replied:', aiReply);
 
-    // on first turn, persist the new threadId
+    // Persist threadId on first turn
     if (!existingThread && openAIThreadId) {
       await set(mapKey, openAIThreadId);
-      console.log(`🗄️ Persisted mapping ${mapKey} → ${openAIThreadId}`);
+      console.log(`🗄️ Saved mapping ${mapKey}→${openAIThreadId}`);
     }
   } catch (err) {
     console.error('❌ Assistant error:', err);
     aiReply = 'Sorry, something went wrong getting your idea.';
   }
 
-  // 9) Post the final answer
+  // 9) Post final answer
   try {
     const replyRes = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
@@ -112,9 +100,9 @@ export default async function handler(req, res) {
     });
     console.log('ℹ️ Reply response:', await replyRes.json());
   } catch (err) {
-    console.error('❌ Error sending final reply:', err);
+    console.error('❌ Reply error:', err);
   }
 
-  // 10) Finally ACK Slack
+  // 10) ACK Slack
   return res.status(200).send('OK');
 }
