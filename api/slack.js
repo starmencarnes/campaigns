@@ -6,16 +6,13 @@ import { getAssistantResponse } from '../lib/assistant.js';
 config();
 export const configFile = { runtime: 'nodejs18.x' };
 
-// In-memory de-dup store (resets on cold start)
-const processedEvents = new Set();
-
 export default async function handler(req, res) {
   // 0) Only accept POST
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 1) Slack URL verification handshake
+  // 1) Slack URL challenge
   if (req.body?.type === 'url_verification') {
     return res.status(200).send(req.body.challenge);
   }
@@ -27,54 +24,38 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 3) Verify Slack request signature
+  // 3) Verify signature
   const signature = req.headers['x-slack-signature'];
   const timestamp = req.headers['x-slack-request-timestamp'];
-  const bodyRaw   = JSON.stringify(req.body);
+  const bodyRaw = JSON.stringify(req.body);
   const expectedSig = 'v0=' +
     crypto
       .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
       .update(`v0:${timestamp}:${bodyRaw}`)
       .digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(signature))) {
+  if (
+    !crypto.timingSafeEqual(
+      Buffer.from(expectedSig),
+      Buffer.from(signature)
+    )
+  ) {
     console.error('❌ Signature mismatch', { expectedSig, signature });
     return res.status(403).send('Invalid signature');
   }
 
-  // 4) Pull out the event
+  // Pull out the event
   const event = req.body.event;
-  if (!event) {
+  if (!event || event.type !== 'app_mention' || event.bot_id) {
+    // nothing for us to do
     return res.status(200).end();
   }
 
-  // 5) Only handle app_mention or direct‐message (message.im) from users
-  const isMention = event.type === 'app_mention';
-  const isDM      = event.type === 'message' && event.channel_type === 'im';
-  if ((!isMention && !isDM) || event.bot_id) {
-    return res.status(200).end();
-  }
-
-  // 6) Deduplicate by event_id
-  const eventId = req.body.event_id;
-  if (processedEvents.has(eventId)) {
-    console.log('⚠️ Duplicate event, skipping:', eventId);
-    return res.status(200).end();
-  }
-  processedEvents.add(eventId);
-  console.log('✅ New event, processing:', eventId);
-
-  // 7) Compute thread context and extract user text
   const channel   = event.channel;
   const thread_ts = event.thread_ts || event.ts;
-  let userText;
-  if (isMention) {
-    userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
-  } else {
-    userText = event.text.trim();
-  }
+  const userText  = event.text.replace(/<@[^>]+>\s*/, '').trim();
   console.log('🤖 User said:', userText);
 
-  // 8) Immediate “I’m on it!” ping
+  // 4) Immediate “I’m on it!” ping
   console.log('📨 Posting immediate acknowledgement…');
   try {
     const pingRes = await fetch(
@@ -98,7 +79,7 @@ export default async function handler(req, res) {
     console.error('❌ Error sending ping:', err);
   }
 
-  // 9) Call your assistant
+  // 5) Call your (stubbed) assistant
   console.log('⏳ Calling getAssistantResponse with:', userText);
   let aiReply;
   try {
@@ -109,8 +90,8 @@ export default async function handler(req, res) {
     aiReply = 'Sorry, something went wrong getting your idea.';
   }
 
-  // 10) Post the final answer in the same thread
-  console.log('📨 Posting final reply…');
+  // 6) Post the final answer
+  console.log('📨 Posting final stub reply…');
   try {
     const replyRes = await fetch(
       'https://slack.com/api/chat.postMessage',
@@ -120,7 +101,11 @@ export default async function handler(req, res) {
           Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ channel, thread_ts, text: aiReply })
+        body: JSON.stringify({
+          channel,
+          thread_ts,
+          text: aiReply
+        })
       }
     );
     const replyJson = await replyRes.json();
@@ -129,6 +114,7 @@ export default async function handler(req, res) {
     console.error('❌ Error sending final reply:', err);
   }
 
-  // 11) Finally ACK Slack
+  // 7) Finally ACK Slack
   return res.status(200).send('OK');
 }
+
