@@ -110,7 +110,7 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify({
             items: [
-              { key: mapKey, value: threadId }
+              { operation: "create", key: mapKey, value: threadId }
             ]
           })
         }
