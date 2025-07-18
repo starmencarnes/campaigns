@@ -13,14 +13,14 @@ export default async function handler(req, res) {
     return res.status(200).send(req.body.challenge);
   }
 
-  // Skip Slack retry attempts
+  // 1) Skip Slack retry attempts
   const retryNum = req.headers['x-slack-retry-num'];
   if (retryNum) {
     console.log('🛑 Skipping Slack retry:', retryNum);
     return res.status(200).end();
   }
 
-  // Signature check
+  // 2) Signature check
   const sig  = req.headers['x-slack-signature'];
   const ts   = req.headers['x-slack-request-timestamp'];
   const body = JSON.stringify(req.body);
@@ -29,35 +29,39 @@ export default async function handler(req, res) {
     .update(`v0:${ts}:${body}`)
     .digest('hex');
   if (!crypto.timingSafeEqual(Buffer.from(mySig), Buffer.from(sig))) {
-    console.error('❌ Signature mismatch');
+    console.error('❌ Signature mismatch', { expected: mySig, got: sig });
     return res.status(403).send('Invalid signature');
   }
 
-  // Ack immediately
+  // 3) Ack immediately
   res.status(200).end();
 
+  // 4) Only handle app_mention from humans
   const event = req.body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
     return;
   }
 
-  // Extract text and call stub
+  // 5) Extract and log
   const text = event.text.replace(/<@[^>]+>\s*/, '').trim();
   console.log('🤖 User said:', text);
 
-  console.log('⏳ Calling getAssistantResponse with:', text);
-  const reply = await getAssistantResponse(text);
+  // 6) Get reply
+  let reply;
+  try {
+    reply = await getAssistantResponse(text);
+  } catch (err) {
+    console.error('❌ Assistant error:', err);
+    reply = 'Sorry, something went wrong getting your idea.';
+  }
   console.log('✅ Assistant replied:', reply);
 
-  // --- New logging around fetch ---
+  // 7) Prepare payload (no thread for now)
   console.log('🔑 SLACK_BOT_TOKEN loaded:', !!process.env.SLACK_BOT_TOKEN);
+  const payload = { channel: event.channel, text: reply };
+  console.log('📨 Posting to Slack with payload:', JSON.stringify(payload));
 
-  const payload = {
-    channel:   event.channel,
-    text:      reply
-  };
-  console.log('📨 Posting to Slack with payload:', payload);
-
+  // 8) Send and log response
   try {
     const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
@@ -67,15 +71,9 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(payload)
     });
-
-    console.log('ℹ️ Raw HTTP status:', slackRes.status);
-    let data;
-    try {
-      data = await slackRes.json();
-      console.log('ℹ️ Slack response body:', data);
-    } catch (parseErr) {
-      console.error('❌ Failed to parse Slack JSON:', parseErr);
-    }
+    console.log('ℹ️ HTTP status:', slackRes.status);
+    const data = await slackRes.json();
+    console.log('ℹ️ Slack response body:', data);
   } catch (err) {
     console.error('❌ Network error posting to Slack:', err);
   }
