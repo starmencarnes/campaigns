@@ -58,6 +58,9 @@ export default async function handler(req, res) {
   seenEvents.add(eid);
   console.log('✅ New event:', eid);
 
+  // ACK Slack immediately to prevent retries
+  res.status(200).send('OK');
+
   // 6) figure out Slack → OpenAI thread mapping keys
   const channel = event.channel;
   const slackTs = event.thread_ts || event.ts;
@@ -143,6 +146,4 @@ export default async function handler(req, res) {
     console.error('❌ Reply error:', err);
   }
 
-  // 13) finally ACK Slack
-  return res.status(200).send('OK');
 }
