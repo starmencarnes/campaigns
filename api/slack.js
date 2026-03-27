@@ -68,40 +68,40 @@ export default async function handler(req, res) {
   console.log('✅ New event:', eid);
 
   // ACK Slack immediately to prevent retries
-  res.status(200).send(‘OK’);
+  res.status(200).send('OK');
 
   // Keep function alive for background processing
   waitUntil((async () => {
     // 6) figure out Slack → OpenAI thread mapping keys
     const channel = event.channel;
     const slackTs = event.thread_ts || event.ts;
-    const safeTs = slackTs.replace(/\./g, ‘_’);
+    const safeTs = slackTs.replace(/\./g, '_');
     const mapKey  = `openAIThread_${safeTs}`;
 
     // 7) read any existing OpenAI thread ID from Edge Config
     const existingThread = await get(mapKey);
 
-    // 8) extract the user’s text
-    const userText = event.text.replace(/<@[^>]+>\s*/, ‘’).trim();
-    console.log(‘🤖 User said:’, userText);
+    // 8) extract the user's text
+    const userText = event.text.replace(/<@[^>]+>\s*/, '').trim();
+    console.log('🤖 User said:', userText);
 
-    // 9) immediate “I’m on it!” ping
+    // 9) immediate "I'm on it!" ping
     try {
-      const ping = await fetch(‘https://slack.com/api/chat.postMessage’, {
-        method: ‘POST’,
+      const ping = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-          ‘Content-Type’: ‘application/json’
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           channel,
           thread_ts: slackTs,
-          text: “👋 I’m on it! Give me a sec…”
+          text: "👋 I'm on it! Give me a sec…"
         })
       });
-      console.log(‘ℹ️ Ping response:’, await ping.json());
+      console.log('ℹ️ Ping response:', await ping.json());
     } catch (err) {
-      console.error(‘❌ Ping error:’, err);
+      console.error('❌ Ping error:', err);
     }
 
     // 10) call your thread-aware assistant
@@ -109,42 +109,42 @@ export default async function handler(req, res) {
     try {
       ({ reply: aiReply, threadId } =
         await getAssistantResponse(userText, existingThread));
-      console.log(‘✅ Assistant replied:’, aiReply);
+      console.log('✅ Assistant replied:', aiReply);
 
       // 11) if first turn, persist new threadId with a PATCH
       if (!existingThread && threadId) {
         const cfgId = process.env.EDGE_CONFIG_ID;
         const patchRes = await fetch(
           `https://api.vercel.com/v1/edge-config/${cfgId}/items`, {
-            method: ‘PATCH’,
+            method: 'PATCH',
             headers: {
               Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
-              ‘Content-Type’: ‘application/json’
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify({
               items: [
-                { operation: “create”, key: mapKey, value: threadId }
+                { operation: "create", key: mapKey, value: threadId }
               ]
             })
           }
         );
         console.log(
-          ‘🗄️ Persist mapping:’, await patchRes.json()
+          '🗄️ Persist mapping:', await patchRes.json()
         );
       }
 
     } catch (err) {
-      console.error(‘❌ Assistant error:’, err);
-      aiReply = ‘Sorry, something went wrong getting your idea.’;
+      console.error('❌ Assistant error:', err);
+      aiReply = 'Sorry, something went wrong getting your idea.';
     }
 
     // 12) post the final AI reply
     try {
-      const replyRes = await fetch(‘https://slack.com/api/chat.postMessage’, {
-        method: ‘POST’,
+      const replyRes = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-          ‘Content-Type’: ‘application/json’
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           channel,
@@ -152,9 +152,9 @@ export default async function handler(req, res) {
           text: aiReply
         })
       });
-      console.log(‘ℹ️ Reply response:’, await replyRes.json());
+      console.log('ℹ️ Reply response:', await replyRes.json());
     } catch (err) {
-      console.error(‘❌ Reply error:’, err);
+      console.error('❌ Reply error:', err);
     }
   })());
 

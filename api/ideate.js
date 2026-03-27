@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import dotenv from ‘dotenv’;
-import { getAssistantResponse } from ‘../lib/assistant.js’;
-import fetch from ‘node-fetch’; // if you’re on Node18+ you can omit this import
+import dotenv from 'dotenv';
+import { getAssistantResponse } from '../lib/assistant.js';
+import fetch from 'node-fetch'; // if you're on Node18+ you can omit this import
 
 dotenv.config();
 
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
   // 4) Acknowledge immediately (empty body = HTTP 200)
   res.status(200).end();
 
-  // 5) Grab the user’s command text & response_url
+  // 5) Grab the user's command text & response_url
   const prompt      = body.text || '';
   const responseUrl = body.response_url;
   console.log('🤖 /ideate prompt:', prompt);
