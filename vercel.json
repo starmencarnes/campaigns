@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/ideate.js": { "maxDuration": 30 },
+    "api/slack.js": { "maxDuration": 30 }
+  }
+}

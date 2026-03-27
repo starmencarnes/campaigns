@@ -5,10 +5,6 @@ import fetch from ‘node-fetch’; // if you’re on Node18+ you can omit this 
 
 dotenv.config();
 
-export const config = {
-  maxDuration: 30,
-  api: { bodyParser: false }
-};
 
 export default async function handler(req, res) {
   // 1) Only POST
