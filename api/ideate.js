@@ -19,7 +19,6 @@ export default async function handler(req, res) {
     req.on('end', resolve);
     req.on('error', reject);
   });
-  console.log('🔍 DEBUG stream buf length:', buf.length, 'req.body type:', typeof req.body, 'req.body keys:', req.body ? Object.keys(req.body) : 'null');
   const body = Object.fromEntries(new URLSearchParams(buf));
 
   // 3) Verify Slack signature
