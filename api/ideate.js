@@ -5,7 +5,10 @@ import fetch from ‘node-fetch’; // if you’re on Node18+ you can omit this 
 
 dotenv.config();
 
-export const config = { maxDuration: 30 };
+export const config = {
+  maxDuration: 30,
+  api: { bodyParser: false }
+};
 
 export default async function handler(req, res) {
   // 1) Only POST
@@ -20,7 +23,6 @@ export default async function handler(req, res) {
     req.on('end', resolve);
     req.on('error', reject);
   });
-
   const body = Object.fromEntries(new URLSearchParams(buf));
 
   // 3) Verify Slack signature
