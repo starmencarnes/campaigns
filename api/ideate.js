@@ -5,8 +5,7 @@ import fetch from 'node-fetch'; // if you’re on Node18+ you can omit this impo
 
 config();
 
-// Ensure runtime
-export const configFile = { runtime: 'nodejs18.x' };
+export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
   // 1) Only POST

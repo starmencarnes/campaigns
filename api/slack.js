@@ -6,7 +6,7 @@ import { getAssistantResponse } from '../lib/assistant.js';
 import { get } from '@vercel/edge-config';
 
 config();
-export const configFile = { runtime: 'nodejs18.x' };
+export const config = { maxDuration: 30 };
 
 // in-memory dedupe for Slack retries
 const seenEvents = new Set();
