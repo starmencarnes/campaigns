@@ -16,22 +16,30 @@ export default async function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 1) URL verification handshake
-  if (req.body?.type === 'url_verification') {
-    return res.status(200).send(req.body.challenge);
+  // 1) Read raw body from stream for accurate signature verification
+  let bodyRaw = '';
+  await new Promise((resolve, reject) => {
+    req.on('data', c => bodyRaw += c);
+    req.on('end', resolve);
+    req.on('error', reject);
+  });
+  const body = JSON.parse(bodyRaw);
+
+  // 2) URL verification handshake
+  if (body.type === 'url_verification') {
+    return res.status(200).send(body.challenge);
   }
 
-  // 2) skip Slack retries
+  // 3) skip Slack retries
   const retry = req.headers['x-slack-retry-num'];
   if (retry) {
     console.log('🛑 Slack retry, skipping:', retry);
     return res.status(200).end();
   }
 
-  // 3) verify signature
+  // 4) verify signature
   const sig     = req.headers['x-slack-signature'];
   const ts      = req.headers['x-slack-request-timestamp'];
-  const bodyRaw = JSON.stringify(req.body);
   const expected =
     'v0=' +
     crypto
@@ -43,14 +51,14 @@ export default async function handler(req, res) {
     return res.status(403).send('Invalid signature');
   }
 
-  // 4) pull out & filter event
-  const event = req.body.event;
+  // 5) pull out & filter event
+  const event = body.event;
   if (!event || event.type !== 'app_mention' || event.bot_id) {
     return res.status(200).end();
   }
 
   // 5) de-dup by event_id (in-memory)
-  const eid = req.body.event_id;
+  const eid = body.event_id;
   if (seenEvents.has(eid)) {
     console.log('⚠️ Duplicate event, skipping:', eid);
     return res.status(200).end();
