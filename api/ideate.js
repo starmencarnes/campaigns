@@ -12,13 +12,14 @@ export default async function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // 2) Capture raw body for signature check
+  // 2) Get raw body for signature check
   let buf = '';
   await new Promise((resolve, reject) => {
     req.on('data', c => buf += c);
     req.on('end', resolve);
     req.on('error', reject);
   });
+  console.log('🔍 DEBUG stream buf length:', buf.length, 'req.body type:', typeof req.body, 'req.body keys:', req.body ? Object.keys(req.body) : 'null');
   const body = Object.fromEntries(new URLSearchParams(buf));
 
   // 3) Verify Slack signature
