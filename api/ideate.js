@@ -1,9 +1,9 @@
 import crypto from 'crypto';
-import { config } from 'dotenv';
-import { getAssistantResponse } from '../lib/assistant.js';
-import fetch from 'node-fetch'; // if you’re on Node18+ you can omit this import
+import dotenv from ‘dotenv’;
+import { getAssistantResponse } from ‘../lib/assistant.js’;
+import fetch from ‘node-fetch’; // if you’re on Node18+ you can omit this import
 
-config();
+dotenv.config();
 
 export const config = { maxDuration: 30 };
 

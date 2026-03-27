@@ -1,11 +1,11 @@
 // /api/slack.js
 import crypto from 'crypto';
-import { config } from 'dotenv';
+import dotenv from 'dotenv';
 import fetch from 'node-fetch';        // remove this line on Node.js 18+
 import { getAssistantResponse } from '../lib/assistant.js';
 import { get } from '@vercel/edge-config';
 
-config();
+dotenv.config();
 export const config = { maxDuration: 30 };
 
 // in-memory dedupe for Slack retries
